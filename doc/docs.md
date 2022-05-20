@@ -369,14 +369,15 @@ Try compiling the program above after removing `mut` from the first line.
 Note the (important) difference between `:=` and `=`.
 `:=` is used for declaring and initializing, `=` is used for assigning.
 
+The code below will not compile, because the variable `age` is not declared.
+All variables need to be declared in V.
+
 ```v failcompile
 fn main() {
 	age = 21
 }
 ```
-
-This code will not compile, because the variable `age` is not declared.
-All variables need to be declared in V.
+To get it compile, you need to initialize the variable like this :
 
 ```v
 fn main() {
