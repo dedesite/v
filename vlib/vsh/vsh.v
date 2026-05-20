@@ -206,23 +206,53 @@ fn run_pipe(stages []CmdStage) ShOutput {
 			// stdin comes from the previous pipe's read end
 			p.set_stdin_fd(pipes[i - 1].read_fd)
 		}
+		// For non-last stages, redirect stderr to the system null device
+		// to avoid creating a stderr pipe that nobody reads.
+		// Without this, if a child writes >64KB to stderr, the write()
+		// blocks, causing a deadlock (child can't exit, pipe never closes).
+		// The /dev/null fd must stay open until AFTER p.run() (fork/CreateProcess)
+		// so the child inherits it and dup2()s it to fd 2, then we close it.
+		mut devnull_fd := -1
 		if i < n - 1 {
 			// stdout goes to the current pipe's write end
 			p.set_stdout_fd(pipes[i].write_fd)
+			$if windows {
+				if f := os.create('NUL') {
+					p.set_stderr_fd(f.fd)
+					devnull_fd = f.fd
+				} else if f := os.open_file('NUL', 'wb') {
+					p.set_stderr_fd(f.fd)
+					devnull_fd = f.fd
+				}
+			} $else {
+				if f := os.create('/dev/null') {
+					p.set_stderr_fd(f.fd)
+					devnull_fd = f.fd
+				} else if f := os.open_file('/dev/null', 'wb') {
+					p.set_stderr_fd(f.fd)
+					devnull_fd = f.fd
+				}
+			}
 		} else {
 			// Last stage: capture stdout
+			// (stderr is also captured automatically by set_redirect_stdio)
 			p.set_redirect_stdio()
 		}
 
 		p.run()
 		processes << p
 
-		// After spawning stage i, close the write end of pipe[i]
-		// in the parent. Subsequent children (i+1) must not inherit
-		// the write end, otherwise they'd keep the pipe open and
-		// prevent EOF for the reader.
+		// After spawning stage i, close parent-side fds:
+		// 1. the write end of pipe[i] — subsequent children (i+1)
+		//    must not inherit it, otherwise they'd keep the pipe
+		//    open and prevent EOF for the reader.
+		// 2. the /dev/null fd — must happen AFTER fork/CreateProcess
+		//    so the child inherits the fd and can dup2() it to stderr.
 		if i < n - 1 {
 			os.fd_close(pipes[i].write_fd)
+			if devnull_fd != -1 {
+				os.fd_close(devnull_fd)
+			}
 		}
 	}
 

@@ -237,3 +237,14 @@ fn test_cmd_pipe_no_args() {
 	assert res.exit_code == 0
 	assert res.output == 'test\n'
 }
+
+fn test_cmd_pipe_stderr_no_deadlock() {
+	// Regression test: non-last stage writes to stderr.
+	// Without stderr redirection to /dev/null for intermediate stages,
+	// this would deadlock (writer blocked on full stderr pipe,
+	// nobody reading). Must not hang or fail.
+	res := cmd(io_exe, '--stdout', 'data', '--stderr', 'err').pipe(cat_exe).run()
+	assert res.success, 'expected success despite stderr from first stage, got exit ${res.exit_code}: ${res.stderr}'
+	assert res.exit_code == 0
+	assert res.output == 'data\n', 'expected "data\\n", got "${res.output}"'
+}

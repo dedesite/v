@@ -8,6 +8,7 @@ fn C.GetProcAddress(handle voidptr, procname &u8) voidptr
 fn C.TerminateProcess(process HANDLE, exit_code u32) bool
 fn C.PeekNamedPipe(hNamedPipe voidptr, lpBuffer voidptr, nBufferSize i32, lpBytesRead voidptr, lpTotalBytesAvail voidptr,
 	lpBytesLeftThisMessage voidptr) bool
+fn C._get_osfhandle(int) voidptr
 
 type FN_NTSuspendResume = fn (voidptr) u64
 
@@ -94,6 +95,22 @@ fn (mut p Process) win_spawn_process() int {
 				C.HANDLE_FLAG_INHERIT, 0)
 			failed_cfn_report_error(set_handle_info_ok0, 'SetHandleInformation')
 			start_info.h_std_input = wdata.child_stdin_read
+		} else {
+			// Convert Unix fd to Windows HANDLE and make it inheritable.
+			// _get_osfhandle returns a voidptr (HANDLE). Assigning to
+			// h_std_input via &u32 reinterprets the pointer type without
+			// truncation; the handle value is preserved.
+			stdin_handle := C._get_osfhandle(p.stdin_custom_fd)
+			set_handle_info_ok := C.SetHandleInformation(stdin_handle, C.HANDLE_FLAG_INHERIT,
+				C.HANDLE_FLAG_INHERIT)
+			if !set_handle_info_ok {
+				error_num := int(C.GetLastError())
+				error_msg := get_error_msg(error_num)
+				p.err = 'could not set handle inheritance for stdin: ${error_msg}'
+				p.status = .aborted
+				return -1
+			}
+			start_info.h_std_input = &u32(stdin_handle)
 		}
 		if p.stdout_custom_fd == -1 {
 			create_pipe_ok1 := C.CreatePipe(voidptr(&wdata.child_stdout_read),
@@ -103,6 +120,22 @@ fn (mut p Process) win_spawn_process() int {
 				C.HANDLE_FLAG_INHERIT, 0)
 			failed_cfn_report_error(set_handle_info_ok1, 'SetHandleInformation')
 			start_info.h_std_output = wdata.child_stdout_write
+		} else {
+			// Convert Unix fd to Windows HANDLE and make it inheritable.
+			// _get_osfhandle returns a voidptr (HANDLE). Assigning to
+			// h_std_output via &u32 reinterprets the pointer type without
+			// truncation; the handle value is preserved.
+			stdout_handle := C._get_osfhandle(p.stdout_custom_fd)
+			set_handle_info_ok := C.SetHandleInformation(stdout_handle, C.HANDLE_FLAG_INHERIT,
+				C.HANDLE_FLAG_INHERIT)
+			if !set_handle_info_ok {
+				error_num := int(C.GetLastError())
+				error_msg := get_error_msg(error_num)
+				p.err = 'could not set handle inheritance for stdout: ${error_msg}'
+				p.status = .aborted
+				return -1
+			}
+			start_info.h_std_output = &u32(stdout_handle)
 		}
 		if p.stderr_custom_fd == -1 {
 			create_pipe_ok2 := C.CreatePipe(voidptr(&wdata.child_stderr_read),
@@ -112,6 +145,22 @@ fn (mut p Process) win_spawn_process() int {
 				C.HANDLE_FLAG_INHERIT, 0)
 			failed_cfn_report_error(set_handle_info_ok2, 'SetHandleInformation stderr')
 			start_info.h_std_error = wdata.child_stderr_write
+		} else {
+			// Convert Unix fd to Windows HANDLE and make it inheritable.
+			// _get_osfhandle returns a voidptr (HANDLE). Assigning to
+			// h_std_error via &u32 reinterprets the pointer type without
+			// truncation; the handle value is preserved.
+			stderr_handle := C._get_osfhandle(p.stderr_custom_fd)
+			set_handle_info_ok := C.SetHandleInformation(stderr_handle, C.HANDLE_FLAG_INHERIT,
+				C.HANDLE_FLAG_INHERIT)
+			if !set_handle_info_ok {
+				error_num := int(C.GetLastError())
+				error_msg := get_error_msg(error_num)
+				p.err = 'could not set handle inheritance for stderr: ${error_msg}'
+				p.status = .aborted
+				return -1
+			}
+			start_info.h_std_error = &u32(stderr_handle)
 		}
 		start_info.dw_flags = u32(C.STARTF_USESTDHANDLES)
 	}
@@ -184,7 +233,18 @@ fn (mut p Process) win_spawn_process() int {
 	} else {
 		0
 	}, work_folder_ptr, voidptr(&start_info), voidptr(&wdata.proc_info))
-	failed_cfn_report_error(create_process_ok, 'CreateProcess')
+	if !create_process_ok {
+		if p.use_stdio_ctl {
+			close_valid_handle(&wdata.child_stdin_read)
+			close_valid_handle(&wdata.child_stdout_write)
+			close_valid_handle(&wdata.child_stderr_write)
+		}
+		error_num := int(C.GetLastError())
+		error_msg := get_error_msg(error_num)
+		p.err = 'could not create process "${p.filename}": ${error_msg}'
+		p.status = .aborted
+		return -1
+	}
 	if p.use_stdio_ctl {
 		close_valid_handle(&wdata.child_stdin_read)
 		close_valid_handle(&wdata.child_stdout_write)

@@ -65,6 +65,12 @@ OS-level pipes connecting stdout of stage i to stdin of stage i+1.
 Only the last stage's stdout and stderr are captured. The exit code
 is from the last stage.
 
+Intermediate stages have their stderr redirected to the system null
+device (`/dev/null` on Unix, `NUL` on Windows). This prevents
+deadlocks: without it, an intermediate stage that writes more than
+the OS pipe buffer (typically 64 KB) to stderr would block forever
+since nobody reads intermediate stderr.
+
 ### `(c Cmd).pipe(args ...string) Cmd`
 
 Appends a new pipeline stage and returns the `Cmd` for chaining.
@@ -94,6 +100,7 @@ Executes the command pipeline and returns an `ShOutput`.
 | Command OK (exit 0) | `ShOutput{success: true, ...}`       | `ShOutput{success: true, ...}`   |
 | Command fails       | `ShOutput{success: false, ...}`      | `ShOutput{success: false, ...}`  |
 | Spawn fails         | `ShOutput{exit_code: -1}`            | `ShOutput{exit_code: -1}`        |
-| Stderr              | Captured from the command            | Captured from last stage only    |
+| Stderr              | Captured from the command            | Intermediate → /dev/null or NUL; |
+|                     |                                      | last stage captured              |
 | Exit code           | From the command                     | From the last stage              |
 | Execution           | Sequential (single process)          | Parallel (OS-level pipes)        |

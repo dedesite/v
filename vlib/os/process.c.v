@@ -101,6 +101,7 @@ pub fn (mut p Process) free() {
 // _spawn should not be called directly, but only by p.run()/p.wait().
 // It encapsulates the fork/execve mechanism that allows the
 // asynchronous starting of the new child process.
+// Returns 0 on success, -1 on spawn failure (p.err is set with details).
 fn (mut p Process) _spawn() int {
 	if !p.env_is_custom {
 		p.env = []string{}
@@ -114,6 +115,9 @@ fn (mut p Process) _spawn() int {
 		pid = p.win_spawn_process()
 	} $else {
 		pid = p.unix_spawn_process()
+	}
+	if pid < 0 {
+		return -1
 	}
 	p.pid = pid
 	p.status = .running
@@ -141,21 +145,27 @@ pub fn (mut p Process) set_redirect_stdio() {
 }
 
 // set_stdin_fd sets a custom file descriptor for the child's stdin.
-// Enables use_stdio_ctl automatically. The caller manages the fd lifetime.
+// Enables use_stdio_ctl automatically. The caller manages the fd
+// lifetime. Works on Unix (direct fd use) and Windows (converts via
+// _get_osfhandle and marks the handle inheritable).
 pub fn (mut p Process) set_stdin_fd(fd int) {
 	p.stdin_custom_fd = fd
 	p.use_stdio_ctl = true
 }
 
 // set_stdout_fd sets a custom file descriptor for the child's stdout.
-// Enables use_stdio_ctl automatically. The caller manages the fd lifetime.
+// Enables use_stdio_ctl automatically. The caller manages the fd
+// lifetime. Works on Unix (direct fd use) and Windows (converts via
+// _get_osfhandle and marks the handle inheritable).
 pub fn (mut p Process) set_stdout_fd(fd int) {
 	p.stdout_custom_fd = fd
 	p.use_stdio_ctl = true
 }
 
 // set_stderr_fd sets a custom file descriptor for the child's stderr.
-// Enables use_stdio_ctl automatically. The caller manages the fd lifetime.
+// Enables use_stdio_ctl automatically. The caller manages the fd
+// lifetime. Works on Unix (direct fd use) and Windows (converts via
+// _get_osfhandle and marks the handle inheritable).
 pub fn (mut p Process) set_stderr_fd(fd int) {
 	p.stderr_custom_fd = fd
 	p.use_stdio_ctl = true
@@ -364,9 +374,14 @@ fn (mut p Process) _is_alive() bool {
 }
 
 // run starts the new process.
+// Returns early if spawning fails (p.err is set with the failure reason,
+// and the process stays in .not_started state).
 pub fn (mut p Process) run() {
 	if p.status != .not_started {
 		return
 	}
-	p._spawn()
+	pid := p._spawn()
+	if pid < 0 {
+		return
+	}
 }

@@ -87,6 +87,7 @@ fn (mut p Process) unix_spawn_process() int {
 		// Stdin: use custom fd or pipe
 		if p.stdin_custom_fd != -1 {
 			C.dup2(p.stdin_custom_fd, 0)
+			fd_close(p.stdin_custom_fd)
 		} else {
 			fd_close(pipeset[1]) // close write end, child doesn't write to stdin
 			C.dup2(pipeset[0], 0)
@@ -95,6 +96,7 @@ fn (mut p Process) unix_spawn_process() int {
 		// Stdout: use custom fd or pipe
 		if p.stdout_custom_fd != -1 {
 			C.dup2(p.stdout_custom_fd, 1)
+			fd_close(p.stdout_custom_fd)
 		} else {
 			fd_close(pipeset[2]) // close read end, child doesn't read stdout
 			C.dup2(pipeset[3], 1)
@@ -103,6 +105,7 @@ fn (mut p Process) unix_spawn_process() int {
 		// Stderr: use custom fd or pipe
 		if p.stderr_custom_fd != -1 {
 			C.dup2(p.stderr_custom_fd, 2)
+			fd_close(p.stderr_custom_fd)
 		} else {
 			fd_close(pipeset[4]) // close read end, child doesn't read stderr
 			C.dup2(pipeset[5], 2)
