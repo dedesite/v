@@ -140,6 +140,27 @@ pub fn (mut p Process) set_redirect_stdio() {
 	}
 }
 
+// set_stdin_fd sets a custom file descriptor for the child's stdin.
+// Enables use_stdio_ctl automatically. The caller manages the fd lifetime.
+pub fn (mut p Process) set_stdin_fd(fd int) {
+	p.stdin_custom_fd = fd
+	p.use_stdio_ctl = true
+}
+
+// set_stdout_fd sets a custom file descriptor for the child's stdout.
+// Enables use_stdio_ctl automatically. The caller manages the fd lifetime.
+pub fn (mut p Process) set_stdout_fd(fd int) {
+	p.stdout_custom_fd = fd
+	p.use_stdio_ctl = true
+}
+
+// set_stderr_fd sets a custom file descriptor for the child's stderr.
+// Enables use_stdio_ctl automatically. The caller manages the fd lifetime.
+pub fn (mut p Process) set_stderr_fd(fd int) {
+	p.stderr_custom_fd = fd
+	p.use_stdio_ctl = true
+}
+
 // stdin_write will write the string `s`, to the stdin pipe of the child process.
 pub fn (mut p Process) stdin_write(s string) {
 	p._check_redirection_call(@METHOD)

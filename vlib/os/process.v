@@ -27,11 +27,14 @@ pub mut:
 	work_folder      string   // the initial working folder of the process. When '', reuse the same folder as the parent process.
 	env_is_custom    bool     // true, when the environment was customized with .set_environment
 	env              []string // the environment with which the process was started  (list of 'var=val')
-	use_stdio_ctl    bool     // when true, then you can use p.stdin_write(), p.stdout_slurp() and p.stderr_slurp()
-	use_pgroup       bool     // when true, the process will create a new process group, enabling .signal_pgkill()
-	stdio_fd         [3]int   // the stdio file descriptors for the child process, used only by the nix implementation
-	wdata            voidptr  // the WProcess; used only by the windows implementation
-	create_no_window bool     // sets a value indicating whether to start the process in a new window, The default is false; used only by the windows implementation
+	stdin_custom_fd  int = -1 // injected fd for child's stdin (-1 = auto pipe)
+	stdout_custom_fd int = -1 // injected fd for child's stdout (-1 = auto pipe)
+	stderr_custom_fd int = -1 // injected fd for child's stderr (-1 = auto pipe)
+	use_stdio_ctl    bool    // when true, then you can use p.stdin_write(), p.stdout_slurp() and p.stderr_slurp()
+	use_pgroup       bool    // when true, the process will create a new process group, enabling .signal_pgkill()
+	stdio_fd         [3]int  // the stdio file descriptors for the child process, used only by the nix implementation
+	wdata            voidptr // the WProcess; used only by the windows implementation
+	create_no_window bool    // sets a value indicating whether to start the process in a new window, The default is false; used only by the windows implementation
 }
 
 // new_process - create a new process descriptor.

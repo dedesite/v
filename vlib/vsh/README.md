@@ -8,7 +8,8 @@ requires no system shell, and is cross-platform (Linux, macOS, Windows).
 ## Basic usage
 
 Import the module and use `must()` for quick "output or crash" scripts,
-or `sh()` when you need the exit code and stderr:
+`sh()` when you need the exit code and stderr, or `cmd().pipe().run()`
+for multi-stage pipelines:
 
 ```v
 import vsh
@@ -24,6 +25,10 @@ if !res.success {
 	eprintln('exit code: ${res.exit_code}')
 	eprintln('stderr: ${res.stderr}')
 }
+
+// cmd().pipe().run() — multi-stage pipeline (OS-level pipes)
+piped := vsh.cmd('echo', 'hello world').pipe('grep', 'hello').run()
+println(piped.output)
 
 // Check if a command exists
 if vsh.sh('which', 'docker').success {
@@ -44,6 +49,35 @@ with separate stdout, stderr, and exit code.
 Splits `cmd` by whitespace and runs it. Returns stdout on success.
 Panics with stderr on failure.
 
+### `vsh.cmd(args ...string) Cmd`
+
+Creates a `Cmd` builder with the given command as the first stage.
+The first argument is the executable; the rest are arguments. Chain
+`.pipe()` and finish with `.run()`.
+
+### `vsh.Cmd`
+
+A builder for running commands, optionally chained via pipes. Create
+with `cmd()`, chain `.pipe()` calls, and finish with `.run()`.
+
+When the pipeline has N stages (N > 1), stages run in parallel with
+OS-level pipes connecting stdout of stage i to stdin of stage i+1.
+Only the last stage's stdout and stderr are captured. The exit code
+is from the last stage.
+
+### `(c Cmd).pipe(args ...string) Cmd`
+
+Appends a new pipeline stage and returns the `Cmd` for chaining.
+Has the same signature as `cmd()`.
+
+### `(c Cmd).run() ShOutput`
+
+Executes the command pipeline and returns an `ShOutput`.
+
+- **0 stages**: returns `exit_code: -1` with an error message
+- **1 stage**: identical to `sh()`
+- **N stages**: OS-level parallel pipes between stages
+
 ### `vsh.ShOutput`
 
 | Field      | Type     | Description                          |
@@ -55,8 +89,11 @@ Panics with stderr on failure.
 
 ## Semantics
 
-| Condition           | `sh()`                          | `must()`               |
-|---------------------|---------------------------------|------------------------|
-| Command OK (exit 0) | `ShOutput{success: true, ...}`  | Returns `output`       |
-| Command fails       | `ShOutput{success: false, ...}` | `panic(stderr)`        |
-| Spawn fails         | `ShOutput{exit_code: -1}`       | `panic(stderr)`        |
+| Condition           | `sh()` / `cmd().run()` (1 stage)     | `cmd().pipe().run()` (N stages) |
+|---------------------|--------------------------------------|----------------------------------|
+| Command OK (exit 0) | `ShOutput{success: true, ...}`       | `ShOutput{success: true, ...}`   |
+| Command fails       | `ShOutput{success: false, ...}`      | `ShOutput{success: false, ...}`  |
+| Spawn fails         | `ShOutput{exit_code: -1}`            | `ShOutput{exit_code: -1}`        |
+| Stderr              | Captured from the command            | Captured from last stage only    |
+| Exit code           | From the command                     | From the last stage              |
+| Execution           | Sequential (single process)          | Parallel (OS-level pipes)        |

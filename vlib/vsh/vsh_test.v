@@ -11,6 +11,7 @@ const vroot = os.dir(vexe)
 const testdata = os.join_path(os.vtmp_dir(), 'vsh_testdata')
 const echo_exe = os.join_path(testdata, 'echo_helper')
 const io_exe = os.join_path(testdata, 'io_helper')
+const cat_exe = os.join_path(testdata, 'cat_helper')
 
 const echo_source = "
 module main
@@ -78,6 +79,24 @@ fn main() {
 }
 "
 
+const cat_source = '
+module main
+
+fn C.read(fd int, buf voidptr, count int) int
+fn C.write(fd int, buf voidptr, count int) int
+
+fn main() {
+	mut buf := [4096]u8{}
+	for {
+		n := C.read(0, &buf[0], 4096)
+		if n <= 0 {
+			break
+		}
+		C.write(1, &buf[0], n)
+	}
+}
+'
+
 fn testsuite_begin() {
 	os.rmdir_all(testdata) or {}
 	os.mkdir_all(testdata)!
@@ -91,6 +110,11 @@ fn testsuite_begin() {
 	os.write_file(io_src, io_source)!
 	assert 0 == os.system('${os.quoted_path(vexe)} -o ${os.quoted_path(io_exe)} ${os.quoted_path(io_src)}')
 	assert os.exists(io_exe)
+
+	cat_src := os.join_path(testdata, 'cat_helper.v')
+	os.write_file(cat_src, cat_source)!
+	assert 0 == os.system('${os.quoted_path(vexe)} -o ${os.quoted_path(cat_exe)} ${os.quoted_path(cat_src)}')
+	assert os.exists(cat_exe)
 }
 
 fn testsuite_end() {
@@ -159,4 +183,57 @@ fn test_sh_command_not_found() {
 	res := sh('nonexistent_command_xyz123')
 	assert !res.success
 	assert res.stderr.len > 0, 'expected error in stderr, got empty'
+}
+
+fn test_cmd_single_stage() {
+	res := cmd(echo_exe, 'hello', 'world').run()
+	assert res.success, 'expected success'
+	assert res.exit_code == 0, 'expected exit_code 0, got ${res.exit_code}'
+	assert res.output == 'hello world\n', 'expected "hello world\\n", got "${res.output}"'
+}
+
+fn test_cmd_empty() {
+	res := cmd().run()
+	assert !res.success, 'expected failure for empty cmd'
+	assert res.exit_code == -1, 'expected exit_code -1, got ${res.exit_code}'
+	assert res.output == 'vsh.cmd: no stages'
+}
+
+fn test_cmd_pipe_two_stages() {
+	// Pipe "hello" through cat (reads stdin, writes stdout)
+	res := cmd(echo_exe, '-n', 'pipe_test').pipe(cat_exe).run()
+	assert res.success, 'expected success, got exit ${res.exit_code}: ${res.stderr}'
+	assert res.exit_code == 0
+	assert res.output == 'pipe_test', 'expected "pipe_test", got "${res.output}"'
+}
+
+fn test_cmd_pipe_multi_stage() {
+	// Three-stage pipe: echo -n 'hello' | cat | cat
+	res := cmd(echo_exe, '-n', 'multi').pipe(cat_exe).pipe(cat_exe).run()
+	assert res.success, 'expected success, got exit ${res.exit_code}: ${res.stderr}'
+	assert res.exit_code == 0
+	assert res.output == 'multi', 'expected "multi", got "${res.output}"'
+}
+
+fn test_cmd_pipe_last_stage_success() {
+	// Pipeline where last stage succeeds
+	res := cmd(echo_exe, 'hello').pipe(cat_exe).run()
+	assert res.success, 'expected success'
+	assert res.exit_code == 0
+}
+
+fn test_cmd_with_args() {
+	// cmd with -n flag
+	res := cmd(echo_exe, '-n', 'hello vsh').run()
+	assert res.success
+	assert res.exit_code == 0
+	assert res.output == 'hello vsh', 'expected "hello vsh", got "${res.output}"'
+}
+
+fn test_cmd_pipe_no_args() {
+	// pipe() with no args should be a no-op
+	res := cmd(echo_exe, 'test').pipe().run()
+	assert res.success
+	assert res.exit_code == 0
+	assert res.output == 'test\n'
 }

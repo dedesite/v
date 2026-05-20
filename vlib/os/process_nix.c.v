@@ -27,25 +27,50 @@ fn (p &Process) unix_resolve_filename() !string {
 }
 
 fn (mut p Process) unix_spawn_process() int {
-	mut pipeset := [6]int{}
+	mut pipeset := [-1, -1, -1, -1, -1, -1]!
 	if p.use_stdio_ctl {
-		mut dont_care := C.pipe(&pipeset[0]) // pipe read end 0 <- 1 pipe write end
-		dont_care = C.pipe(&pipeset[2]) // pipe read end 2 <- 3 pipe write end
-		dont_care = C.pipe(&pipeset[4]) // pipe read end 4 <- 5 pipe write end
-		_ = dont_care // using `_` directly on each above `pipe` fails to avoid C compiler generate an `-Wunused-result` warning
+		// stdin pipe: only create if no custom fd
+		if p.stdin_custom_fd == -1 {
+			mut dont_care := C.pipe(&pipeset[0]) // pipe read end 0 <- 1 pipe write end
+			_ = dont_care
+		}
+		// stdout pipe: only create if no custom fd
+		if p.stdout_custom_fd == -1 {
+			mut dont_care := C.pipe(&pipeset[2]) // pipe read end 2 <- 3 pipe write end
+			_ = dont_care
+		}
+		// stderr pipe: only create if no custom fd
+		if p.stderr_custom_fd == -1 {
+			mut dont_care := C.pipe(&pipeset[4]) // pipe read end 4 <- 5 pipe write end
+			_ = dont_care
+		}
 	}
 	pid := fork()
 	if pid != 0 {
 		// This is the parent process after the fork.
 		// Note: pid contains the process ID of the child process
 		if p.use_stdio_ctl {
-			p.stdio_fd[0] = pipeset[1] // store the write end of child's in
-			p.stdio_fd[1] = pipeset[2] // store the read end of child's out
-			p.stdio_fd[2] = pipeset[4] // store the read end of child's err
-			// close the rest of the pipe fds, the parent does not need them
-			fd_close(pipeset[0])
-			fd_close(pipeset[3])
-			fd_close(pipeset[5])
+			// Stdin: if no custom fd, use pipe write end; otherwise -1 (caller manages)
+			if p.stdin_custom_fd != -1 {
+				p.stdio_fd[0] = -1
+			} else {
+				p.stdio_fd[0] = pipeset[1] // store the write end of child's in
+				fd_close(pipeset[0]) // close the read end (parent doesn't read stdin)
+			}
+			// Stdout: if no custom fd, use pipe read end; otherwise -1 (caller manages)
+			if p.stdout_custom_fd != -1 {
+				p.stdio_fd[1] = -1
+			} else {
+				p.stdio_fd[1] = pipeset[2] // store the read end of child's out
+				fd_close(pipeset[3]) // close the write end (parent doesn't write stdout)
+			}
+			// Stderr: if no custom fd, use pipe read end; otherwise -1 (caller manages)
+			if p.stderr_custom_fd != -1 {
+				p.stdio_fd[2] = -1
+			} else {
+				p.stdio_fd[2] = pipeset[4] // store the read end of child's err
+				fd_close(pipeset[5]) // close the write end (parent doesn't write stderr)
+			}
 		}
 		return pid
 	}
@@ -59,20 +84,30 @@ fn (mut p Process) unix_spawn_process() int {
 		C.setpgid(0, 0)
 	}
 	if p.use_stdio_ctl {
-		// Redirect the child standard in/out/err to the pipes that
-		// were created in the parent.
-		// Close the parent's pipe fds, the child do not need them:
-		fd_close(pipeset[1])
-		fd_close(pipeset[2])
-		fd_close(pipeset[4])
-		// redirect the pipe fds to the child's in/out/err fds:
-		C.dup2(pipeset[0], 0)
-		C.dup2(pipeset[3], 1)
-		C.dup2(pipeset[5], 2)
-		// close the pipe fdsx after the redirection
-		fd_close(pipeset[0])
-		fd_close(pipeset[3])
-		fd_close(pipeset[5])
+		// Stdin: use custom fd or pipe
+		if p.stdin_custom_fd != -1 {
+			C.dup2(p.stdin_custom_fd, 0)
+		} else {
+			fd_close(pipeset[1]) // close write end, child doesn't write to stdin
+			C.dup2(pipeset[0], 0)
+			fd_close(pipeset[0])
+		}
+		// Stdout: use custom fd or pipe
+		if p.stdout_custom_fd != -1 {
+			C.dup2(p.stdout_custom_fd, 1)
+		} else {
+			fd_close(pipeset[2]) // close read end, child doesn't read stdout
+			C.dup2(pipeset[3], 1)
+			fd_close(pipeset[3])
+		}
+		// Stderr: use custom fd or pipe
+		if p.stderr_custom_fd != -1 {
+			C.dup2(p.stderr_custom_fd, 2)
+		} else {
+			fd_close(pipeset[4]) // close read end, child doesn't read stderr
+			C.dup2(pipeset[5], 2)
+			fd_close(pipeset[5])
+		}
 	}
 	p.filename = p.unix_resolve_filename() or {
 		eprintln(err)

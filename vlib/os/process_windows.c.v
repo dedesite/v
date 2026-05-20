@@ -86,27 +86,33 @@ fn (mut p Process) win_spawn_process() int {
 		sa.n_length = sizeof(C.SECURITY_ATTRIBUTES)
 		sa.b_inherit_handle = true
 
-		create_pipe_ok0 := C.CreatePipe(voidptr(&wdata.child_stdin_read),
-			voidptr(&wdata.child_stdin_write), voidptr(&sa), 65536)
-		failed_cfn_report_error(create_pipe_ok0, 'CreatePipe stdin')
-		set_handle_info_ok0 := C.SetHandleInformation(wdata.child_stdin_write,
-			C.HANDLE_FLAG_INHERIT, 0)
-		failed_cfn_report_error(set_handle_info_ok0, 'SetHandleInformation')
-		create_pipe_ok1 := C.CreatePipe(voidptr(&wdata.child_stdout_read),
-			voidptr(&wdata.child_stdout_write), voidptr(&sa), 65536)
-		failed_cfn_report_error(create_pipe_ok1, 'CreatePipe stdout')
-		set_handle_info_ok1 := C.SetHandleInformation(wdata.child_stdout_read,
-			C.HANDLE_FLAG_INHERIT, 0)
-		failed_cfn_report_error(set_handle_info_ok1, 'SetHandleInformation')
-		create_pipe_ok2 := C.CreatePipe(voidptr(&wdata.child_stderr_read),
-			voidptr(&wdata.child_stderr_write), voidptr(&sa), 65536)
-		failed_cfn_report_error(create_pipe_ok2, 'CreatePipe stderr')
-		set_handle_info_ok2 := C.SetHandleInformation(wdata.child_stderr_read,
-			C.HANDLE_FLAG_INHERIT, 0)
-		failed_cfn_report_error(set_handle_info_ok2, 'SetHandleInformation stderr')
-		start_info.h_std_input = wdata.child_stdin_read
-		start_info.h_std_output = wdata.child_stdout_write
-		start_info.h_std_error = wdata.child_stderr_write
+		if p.stdin_custom_fd == -1 {
+			create_pipe_ok0 := C.CreatePipe(voidptr(&wdata.child_stdin_read),
+				voidptr(&wdata.child_stdin_write), voidptr(&sa), 65536)
+			failed_cfn_report_error(create_pipe_ok0, 'CreatePipe stdin')
+			set_handle_info_ok0 := C.SetHandleInformation(wdata.child_stdin_write,
+				C.HANDLE_FLAG_INHERIT, 0)
+			failed_cfn_report_error(set_handle_info_ok0, 'SetHandleInformation')
+			start_info.h_std_input = wdata.child_stdin_read
+		}
+		if p.stdout_custom_fd == -1 {
+			create_pipe_ok1 := C.CreatePipe(voidptr(&wdata.child_stdout_read),
+				voidptr(&wdata.child_stdout_write), voidptr(&sa), 65536)
+			failed_cfn_report_error(create_pipe_ok1, 'CreatePipe stdout')
+			set_handle_info_ok1 := C.SetHandleInformation(wdata.child_stdout_read,
+				C.HANDLE_FLAG_INHERIT, 0)
+			failed_cfn_report_error(set_handle_info_ok1, 'SetHandleInformation')
+			start_info.h_std_output = wdata.child_stdout_write
+		}
+		if p.stderr_custom_fd == -1 {
+			create_pipe_ok2 := C.CreatePipe(voidptr(&wdata.child_stderr_read),
+				voidptr(&wdata.child_stderr_write), voidptr(&sa), 65536)
+			failed_cfn_report_error(create_pipe_ok2, 'CreatePipe stderr')
+			set_handle_info_ok2 := C.SetHandleInformation(wdata.child_stderr_read,
+				C.HANDLE_FLAG_INHERIT, 0)
+			failed_cfn_report_error(set_handle_info_ok2, 'SetHandleInformation stderr')
+			start_info.h_std_error = wdata.child_stderr_write
+		}
 		start_info.dw_flags = u32(C.STARTF_USESTDHANDLES)
 	}
 	mut cmd := requote_arg(p.filename)
