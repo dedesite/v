@@ -31,18 +31,24 @@ fn (mut p Process) unix_spawn_process() int {
 	if p.use_stdio_ctl {
 		// stdin pipe: only create if no custom fd
 		if p.stdin_custom_fd == -1 {
-			mut dont_care := C.pipe(&pipeset[0]) // pipe read end 0 <- 1 pipe write end
-			_ = dont_care
+			if C.pipe(&pipeset[0]) == -1 { // pipe read end 0 <- 1 pipe write end
+				p.err = posix_get_error_msg(C.errno)
+				return -1
+			}
 		}
 		// stdout pipe: only create if no custom fd
 		if p.stdout_custom_fd == -1 {
-			mut dont_care := C.pipe(&pipeset[2]) // pipe read end 2 <- 3 pipe write end
-			_ = dont_care
+			if C.pipe(&pipeset[2]) == -1 { // pipe read end 2 <- 3 pipe write end
+				p.err = posix_get_error_msg(C.errno)
+				return -1
+			}
 		}
 		// stderr pipe: only create if no custom fd
 		if p.stderr_custom_fd == -1 {
-			mut dont_care := C.pipe(&pipeset[4]) // pipe read end 4 <- 5 pipe write end
-			_ = dont_care
+			if C.pipe(&pipeset[4]) == -1 { // pipe read end 4 <- 5 pipe write end
+				p.err = posix_get_error_msg(C.errno)
+				return -1
+			}
 		}
 	}
 	pid := fork()
